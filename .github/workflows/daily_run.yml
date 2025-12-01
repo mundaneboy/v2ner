@@ -1,0 +1,37 @@
+name: Daily V2Ray Config Fetcher
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # اجرا هر روز ساعت 00:00 UTC
+  workflow_dispatch: # امکان اجرای دستی
+
+jobs:
+  fetch-configs:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run fetch script
+      env:
+        TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+        TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+        TELEGRAM_SESSION: ${{ secrets.TELEGRAM_SESSION }}
+      run: python main.py
+
+    - name: Upload artifact (Temporary)
+      uses: actions/upload-artifact@v4
+      with:
+        name: v2ray-configs
+        path: subscribed_configs.txt
