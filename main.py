@@ -16,23 +16,45 @@ API_HASH = os.getenv('TELEGRAM_API_HASH')
 SESSION_STRING = os.getenv('TELEGRAM_SESSION')
 
 # الگوهای جستجو برای کانفیگ‌ها
-CONFIG_PATTERNS = [
-    r'vmess://[a-zA-Z0-9+/=]+',
-    r'vless://[a-zA-Z0-9\-@:.]+(?:\?[a-zA-Z0-9_=&%\-]*)?(?:#[a-zA-Z0-9%\-_]*)?',
-    r'trojan://[a-zA-Z0-9\-@:.]+(?:\?[a-zA-Z0-9_=&%\-]*)?(?:#[a-zA-Z0-9%\-_]*)?',
-    r'ss://[a-zA-Z0-9\-@:.]+(?:#[a-zA-Z0-9%\-_]*)?',
-    r'hysteria://[a-zA-Z0-9\-@:.]+(?:\?[a-zA-Z0-9_=&%\-]*)?(?:#[a-zA-Z0-9%\-_]*)?',
-    r'hysteria2://[a-zA-Z0-9\-@:.]+(?:\?[a-zA-Z0-9_=&%\-]*)?(?:#[a-zA-Z0-9%\-_]*)?',
-    r'tuic://[a-zA-Z0-9\-@:.]+(?:\?[a-zA-Z0-9_=&%\-]*)?(?:#[a-zA-Z0-9%\-_]*)?',
-]
+# الگوی کلی برای پیدا کردن پروتکل‌ها تا رسیدن به فضای خالی یا خط جدید
+CONFIG_REGEX = r'(vmess|vless|trojan|ss|hysteria|hysteria2|tuic)://[^\s\n]+'
 
-async def get_configs_from_messages(messages):
+def clean_config(config, channel_name):
+    """
+    لینک را تمیز می‌کند و اگر اسم نداشت، اسم کانال را اضافه می‌کند.
+    """
+    # حذف کاراکترهای اضافی از انتهای لینک (مثل نقطه، ویرگول، پرانتز که در متن پیام ممکن است باشد)
+    config = config.rstrip('.,)]}!:;\'"')
+    
+    # بررسی پروتکل
+    if config.startswith('vmess://'):
+        # برای vmess فعلا کاری نمی‌کنیم چون ساختار json base64 دارد و دستکاری آن پیچیده است
+        # فقط اگر خیلی کوتاه بود حذفش می‌کنیم
+        if len(config) < 15:
+            return None
+        return config
+    
+    else:
+        # برای سایر پروتکل‌ها (vless, trojan, ...)
+        # چک می‌کنیم آیا # (fragment) دارد یا نه
+        if '#' not in config:
+            # اگر نداشت، اسم کانال را اضافه می‌کنیم
+            # کاراکترهای غیرمجاز در اسم کانال را حذف یا جایگزین می‌کنیم
+            safe_name = re.sub(r'[^a-zA-Z0-9_]', '', channel_name)
+            config += f"#{safe_name}"
+        
+        return config
+
+async def get_configs_from_messages(messages, channel_name):
     configs = []
     for message in messages:
         if message.text:
-            for pattern in CONFIG_PATTERNS:
-                found = re.findall(pattern, message.text)
-                configs.extend(found)
+            # پیدا کردن تمام لینک‌ها با الگوی جدید
+            found = re.findall(CONFIG_REGEX, message.text)
+            for conf in found:
+                cleaned = clean_config(conf, channel_name)
+                if cleaned:
+                    configs.append(cleaned)
     return configs
 
 async def process_channel(client, channel_username):
@@ -55,22 +77,22 @@ async def process_channel(client, channel_username):
         logger.info(f"Checking last {hours} hours for {channel_username}...")
         cutoff_time = now - timedelta(hours=hours)
         
-        # اگر این اولین بازه نیست (یعنی 48 یا 72)، باید مطمئن شویم که پیام‌های تکراری بازه قبلی را دوباره نگیریم
-        # اما ساده‌ترین راه این است که کل بازه را بگیریم و اگر کانفیگ پیدا شد، حلقه را بشکنیم.
-        # طبق درخواست شما: "اگه نداشت کد باید ۴۸ ساعت گذشته اون کانال رو فقط بررسی کنه"
-        
         messages = []
         async for message in client.iter_messages(entity, offset_date=now, limit=None):
             if message.date < cutoff_time:
                 break
             messages.append(message)
             
-        configs = await get_configs_from_messages(messages)
+        # نام کانال را برای نام‌گذاری کانفیگ‌ها می‌فرستیم
+        # از username یا title استفاده می‌کنیم
+        display_name = getattr(entity, 'username', None) or getattr(entity, 'title', 'Unknown')
+        
+        configs = await get_configs_from_messages(messages, display_name)
         
         if configs:
             logger.info(f"Found {len(configs)} configs in last {hours} hours.")
             found_configs = configs
-            break # اگر پیدا کردیم، دیگر بازه‌های زمانی عقب‌تر را چک نمی‌کنیم
+            break 
         else:
             logger.info(f"No configs found in last {hours} hours. Extending search...")
             
