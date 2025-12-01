@@ -1,3 +1,4 @@
-@v2rayng_org
-@v2ray_outlineir
-@FreeV2rayOrg
+@v2rayngvpn
+@v2ray_alpha
+@v2line
+@freakconfig
