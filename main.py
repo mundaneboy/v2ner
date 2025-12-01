@@ -5,15 +5,23 @@ from datetime import datetime, timedelta, timezone
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 import logging
+import boto3
+from botocore.exceptions import NoCredentialsError
 
 # تنظیمات لاگ
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# دریافت متغیرهای محیطی
+# دریافت متغیرهای محیطی تلگرام
 API_ID = os.getenv('TELEGRAM_API_ID')
 API_HASH = os.getenv('TELEGRAM_API_HASH')
 SESSION_STRING = os.getenv('TELEGRAM_SESSION')
+
+# دریافت متغیرهای محیطی آروان‌کلاد
+ARVAN_ACCESS_KEY = os.getenv('ARVAN_ACCESS_KEY')
+ARVAN_SECRET_KEY = os.getenv('ARVAN_SECRET_KEY')
+ARVAN_ENDPOINT = os.getenv('ARVAN_ENDPOINT')
+ARVAN_BUCKET = os.getenv('ARVAN_BUCKET')
 
 # الگوهای جستجو برای کانفیگ‌ها
 # الگوی کلی برای پیدا کردن پروتکل‌ها تا رسیدن به فضای خالی یا خط جدید
@@ -99,6 +107,48 @@ async def process_channel(client, channel_username):
             
     return found_configs
 
+def upload_to_arvan(file_path, object_name):
+    """
+    آپلود فایل به فضای ابری آروان (S3)
+    """
+    if not all([ARVAN_ACCESS_KEY, ARVAN_SECRET_KEY, ARVAN_ENDPOINT, ARVAN_BUCKET]):
+        logger.error("ArvanCloud credentials are missing.")
+        return
+
+    s3 = boto3.client(
+        's3',
+        endpoint_url=ARVAN_ENDPOINT,
+        aws_access_key_id=ARVAN_ACCESS_KEY,
+        aws_secret_access_key=ARVAN_SECRET_KEY
+    )
+
+    try:
+        logger.info(f"Uploading {file_path} to ArvanCloud bucket {ARVAN_BUCKET}...")
+        # آپلود فایل با دسترسی عمومی (public-read) تا لینک ثابت کار کند
+        s3.upload_file(
+            file_path, 
+            ARVAN_BUCKET, 
+            object_name, 
+            ExtraArgs={'ACL': 'public-read', 'ContentType': 'text/plain'}
+        )
+        logger.info("Upload successful!")
+        
+        # نمایش لینک فایل
+        # معمولاً فرمت لینک به صورت https://bucket-name.endpoint/object-name است
+        # اما بستگی به تنظیمات Endpoint دارد. اگر Endpoint شامل https:// باشد:
+        base_url = ARVAN_ENDPOINT.rstrip('/')
+        # برخی اوقات باکت ساب‌دامین است، برخی اوقات مسیر. در آروان معمولا باکت ساب‌دامین است.
+        # اما ساده‌ترین حالت دسترسی path-style است اگر ساپورت شود، یا virtual-hosted style.
+        # فرض بر ساختار استاندارد آروان: https://bucket.s3.ir-thr-at1.arvanstorage.ir/object
+        
+        # یک حدس برای لینک (ممکن است دقیق نباشد ولی برای لاگ خوب است)
+        logger.info(f"File should be accessible at: {base_url}/{ARVAN_BUCKET}/{object_name}")
+
+    except NoCredentialsError:
+        logger.error("Credentials not available")
+    except Exception as e:
+        logger.error(f"Failed to upload to ArvanCloud: {e}")
+
 async def main():
     if not API_ID or not API_HASH or not SESSION_STRING:
         logger.error("Environment variables TELEGRAM_API_ID, TELEGRAM_API_HASH, or TELEGRAM_SESSION are missing.")
@@ -125,10 +175,14 @@ async def main():
         
         logger.info(f"Total unique configs found: {len(unique_configs)}")
         
+        output_file = 'subscribed_configs.txt'
         # ذخیره در فایل (فعلا در یک فایل متنی ساده)
-        with open('subscribed_configs.txt', 'w') as f:
+        with open(output_file, 'w') as f:
             for config in unique_configs:
                 f.write(config + '\n')
+        
+        # آپلود به آروان
+        upload_to_arvan(output_file, output_file)
 
 if __name__ == '__main__':
     asyncio.run(main())
