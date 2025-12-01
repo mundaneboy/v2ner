@@ -17,7 +17,8 @@ SESSION_STRING = os.getenv('TELEGRAM_SESSION')
 
 # الگوهای جستجو برای کانفیگ‌ها
 # الگوی کلی برای پیدا کردن پروتکل‌ها تا رسیدن به فضای خالی یا خط جدید
-CONFIG_REGEX = r'(vmess|vless|trojan|ss|hysteria|hysteria2|tuic)://[^\s\n]+'
+# از (?:...) استفاده می‌کنیم تا فقط پروتکل را برنگرداند و کل لینک را بگیرد
+CONFIG_REGEX = r'(?:vmess|vless|trojan|ss|hysteria|hysteria2|tuic)://[^\s\n]+'
 
 def clean_config(config, channel_name):
     """
