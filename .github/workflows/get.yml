@@ -1,15 +1,15 @@
 name: Reveal Secrets Temporary
 
 on:
-  workflow_dispatch: # این خط به شما اجازه می‌دهد اکشن را دستی اجرا کنید
+  workflow_dispatch:
 
 jobs:
   reveal:
     runs-on: ubuntu-latest
     steps:
-      - name: Reveal Secrets
+      - name: Reveal Secrets with Spaces
         run: |
-          echo "API_ID in Base64:"
-          echo -n "${{ secrets.TELEGRAM_API_ID }}" | base64
-          echo "API_HASH in Base64:"
-          echo -n "${{ secrets.TELEGRAM_API_HASH }}" | base64
+          echo "API_ID (Remove spaces after copying):"
+          echo "${{ secrets.TELEGRAM_API_ID }}" | sed 's/./& /g'
+          echo "API_HASH (Remove spaces after copying):"
+          echo "${{ secrets.TELEGRAM_API_HASH }}" | sed 's/./& /g'
